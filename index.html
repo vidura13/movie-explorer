@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Movie Explorer — search thousands of films, view details and trailers, and save your favourites." />
+    <meta name="theme-color" content="#0b0f14" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Movie Explorer</title>
+
+    <!--
+      Resolve the saved theme before React mounts.
+      Without this, a dark-mode user sees a white flash for one frame while the
+      bundle loads. The key and values match src/context/ThemeContext.jsx.
+    -->
+    <script>
+      (function () {
+        try {
+          var saved = localStorage.getItem('me_theme');
+          var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var mode = saved === 'light' || saved === 'dark' ? saved : prefersDark ? 'dark' : 'light';
+          document.documentElement.dataset.theme = mode;
+          document.documentElement.style.backgroundColor = mode === 'dark' ? '#0b0f14' : '#f5f6fa';
+        } catch (error) {
+          /* localStorage can be unavailable in private modes — fall through to defaults */
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

@@ -1,0 +1,43 @@
+{
+  "name": "movie-explorer",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Movie Explorer — search, discover and save your favourite films. Powered by the TMDb API.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint .",
+    "format": "prettier --write \"src/**/*.{js,jsx,css}\"",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/icons-material": "^9.4.0",
+    "@mui/material": "^9.4.0",
+    "axios": "^1.20.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-router-dom": "^7.18.4"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@testing-library/dom": "^10.4.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.5.2",
+    "@vitejs/plugin-react": "^6.1.2",
+    "eslint": "^10.12.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.4.20",
+    "globals": "^15.14.0",
+    "jsdom": "^29.0.0",
+    "prettier": "^3.9.9",
+    "vite": "^8.3.3",
+    "vitest": "^5.0.3"
+  }
+}
