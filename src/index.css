@@ -1,0 +1,46 @@
+/*
+ * The only global stylesheet in the project.
+ *
+ * Everything visual beyond this belongs to the MUI theme (src/theme.js) so that
+ * both colour modes stay in one place. What remains here is the small amount of
+ * CSS that has to live at the document level.
+ */
+
+:root {
+  color-scheme: light dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Images are given explicit aspect-ratio boxes by their components; making
+   them block-level avoids the inline-element baseline gap underneath. */
+img {
+  display: block;
+}
+
+/* Respect the OS "reduce motion" setting: skeleton shimmer and card hover
+   transforms are disabled rather than merely shortened. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
