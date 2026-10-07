@@ -2,7 +2,7 @@
 
 A React application for discovering films — search thousands of titles, browse trending movies, filter by genre, year and rating, watch trailers, and save favourites.
 
-**Live demo:** _pending deploy_
+**Live demo:** https://vidura-movie-explorer.netlify.app
 
 **Demo login:** `demo` / `demo1234` — shown on the login card.
 
