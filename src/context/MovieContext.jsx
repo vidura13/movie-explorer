@@ -5,6 +5,7 @@ import useDebounce from '../hooks/useDebounce';
 import useLocalStorage from '../hooks/useLocalStorage';
 import { INITIAL_FILTERS, SEARCH_DEBOUNCE_MS, STORAGE_KEYS } from '../utils/constants';
 import { isCancellation } from '../utils/errorMessages';
+import { applySort } from '../utils/sorting';
 
 /**
  * Movie data: trending, search, filters and pagination.
@@ -173,7 +174,18 @@ export function MovieProvider({ children }) {
       };
     }
 
-    const hasServerFilters = Boolean(genreId || year || minRating);
+    /**
+     * Choosing a non-default sort is what switches the app from the fixed
+     * "trending this week" feed to the sortable catalogue.
+     *
+     * `sortBy` must be part of this condition. Omitting it was a bug: selecting
+     * "highest rated" changed nothing, because with no query and no other
+     * filter the app stayed on /trending/movie/week, which has a fixed order
+     * and no sort_by parameter at all. The selector moved, the results did not.
+     */
+    const hasActiveSort = sortBy !== INITIAL_FILTERS.sortBy;
+    const hasServerFilters = Boolean(genreId || year || minRating || hasActiveSort);
+
     if (hasServerFilters) {
       return {
         source: 'discover',
@@ -198,6 +210,17 @@ export function MovieProvider({ children }) {
     requestPlan
       .run(1, controller.signal)
       .then((data) => {
+        /**
+         * Do not apply a result that has been superseded.
+         *
+         * Cached endpoints (trending, genres) deliberately ignore the signal,
+         * because a request shared between callers must not be cancellable by
+         * one of them — so the promise can still resolve after this component
+         * has moved on. This check, not the abort, is what stops a stale
+         * response from overwriting newer state.
+         */
+        if (controller.signal.aborted) return;
+
         dispatch({
           type: 'FETCH_SUCCESS',
           payload: {
@@ -213,6 +236,7 @@ export function MovieProvider({ children }) {
       })
       .catch((error) => {
         if (isCancellation(error)) return; // superseded by a newer request
+        if (controller.signal.aborted) return;
         dispatch({ type: 'FETCH_ERROR', payload: error });
       });
 
@@ -239,6 +263,7 @@ export function MovieProvider({ children }) {
     requestPlan
       .run(nextPage, controller.signal)
       .then((data) => {
+        if (controller.signal.aborted) return;
         dispatch({
           type: 'APPEND_SUCCESS',
           payload: {
@@ -251,13 +276,14 @@ export function MovieProvider({ children }) {
       })
       .catch((error) => {
         if (isCancellation(error)) return;
+        if (controller.signal.aborted) return;
         dispatch({ type: 'APPEND_ERROR', payload: error });
       });
   }, [state.page, state.totalPages, state.totalResults, state.isAppending, state.status, requestPlan]);
 
   /** Re-run the current request — the action behind every "Try again" button. */
   const retry = useCallback(() => {
-    clearResponseCache(); // a failure may have been cached before it resolved
+    clearResponseCache(); // a failure must never be served from the cache
     dispatch({ type: 'FETCH_START' });
     const controller = new AbortController();
     abortRef.current?.abort();
@@ -266,6 +292,7 @@ export function MovieProvider({ children }) {
     requestPlan
       .run(1, controller.signal)
       .then((data) => {
+        if (controller.signal.aborted) return;
         dispatch({
           type: 'FETCH_SUCCESS',
           payload: {
@@ -279,6 +306,7 @@ export function MovieProvider({ children }) {
       })
       .catch((error) => {
         if (isCancellation(error)) return;
+        if (controller.signal.aborted) return;
         dispatch({ type: 'FETCH_ERROR', payload: error });
       });
   }, [requestPlan]);
@@ -296,18 +324,34 @@ export function MovieProvider({ children }) {
    */
   const visibleItems = useMemo(() => {
     if (state.source !== 'search') return state.items;
-    if (!genreId && !minRating) return state.items;
 
-    return state.items.filter((movie) => {
-      if (genreId && !(movie.genre_ids || []).includes(Number(genreId))) return false;
-      if (minRating && (movie.vote_average || 0) < Number(minRating)) return false;
-      return true;
-    });
-  }, [state.items, state.source, genreId, minRating]);
+    let list = state.items;
+
+    if (genreId || minRating) {
+      list = list.filter((movie) => {
+        if (genreId && !(movie.genre_ids || []).includes(Number(genreId))) return false;
+        if (minRating && (movie.vote_average || 0) < Number(minRating)) return false;
+        return true;
+      });
+    }
+
+    // Sorting is applied locally too, for the same reason: /search/movie has no
+    // sort_by parameter. The comparator is shared with the server-side path.
+    if (sortBy !== INITIAL_FILTERS.sortBy) {
+      list = applySort(list, sortBy);
+    }
+
+    return list;
+  }, [state.items, state.source, genreId, minRating, sortBy]);
 
   /** True when search mode is narrowing the loaded set — the UI warns about it. */
   const isClientFiltered =
-    state.source === 'search' && state.items.length !== visibleItems.length && Boolean(genreId || minRating);
+    state.source === 'search' &&
+    Boolean(genreId || minRating) &&
+    state.items.length !== visibleItems.length;
+
+  /** True when search mode is reordering the loaded set — also worth saying. */
+  const isClientSorted = state.source === 'search' && sortBy !== INITIAL_FILTERS.sortBy;
 
   const hasActiveFilters = Boolean(genreId || year || minRating || sortBy !== INITIAL_FILTERS.sortBy);
   const hasMore = state.page < state.totalPages;
@@ -327,9 +371,20 @@ export function MovieProvider({ children }) {
       totalResults: state.totalResults,
       isAppending: state.isAppending,
       isClientFiltered,
+      isClientSorted,
       hasActiveFilters,
       hasMore,
       isSearching: Boolean(trimmedQuery),
+      /**
+       * The query the grid's contents actually belong to, once the debounce has
+       * settled. User-facing copy must use this rather than the raw input.
+       *
+       * The grid keeps the previous results on screen during the 400ms debounce,
+       * so a heading built from the raw query would briefly claim "Results for
+       * X" above movies that have nothing to do with X — and the count for that
+       * query would be announced before its results had arrived.
+       */
+      settledQuery: trimmedQuery,
       // actions
       setQuery,
       setFilters,
@@ -341,6 +396,7 @@ export function MovieProvider({ children }) {
       state,
       visibleItems,
       isClientFiltered,
+      isClientSorted,
       hasActiveFilters,
       hasMore,
       trimmedQuery,

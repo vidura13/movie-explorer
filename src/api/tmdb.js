@@ -2,6 +2,7 @@ import axiosClient from './axiosClient';
 import { endpoints } from './endpoints';
 import { USE_MOCK_DATA } from '../utils/constants';
 import * as mockApi from '../mocks/mockApi';
+import { voteFloorFor } from '../utils/sorting';
 
 /**
  * The single entry point the rest of the app uses to talk to TMDb.
@@ -15,37 +16,93 @@ import * as mockApi from '../mocks/mockApi';
  */
 
 /**
- * Tiny in-memory response cache.
+ * In-memory response cache.
  *
- * Trending and the genre list are requested on every visit to Home but change
- * at most once a day, so caching them removes two network round-trips per
+ * Trending and the genre list are requested on every visit to Home but change at
+ * most once a day, so caching them removes two network round-trips per
  * navigation within a session. Paginated and query-based calls are deliberately
  * NOT cached: their keys would grow without bound and they change constantly.
+ *
+ * Two maps, and the distinction between them matters:
+ *
+ *   responseCache — completed responses, keyed by endpoint + params.
+ *   inFlight      — requests in progress, so simultaneous callers share one.
+ *
+ * ---------------------------------------------------------------------------
+ * Why resolved data is cached rather than the promise
+ * ---------------------------------------------------------------------------
+ * The first version of this file cached the *promise* returned by axios. That
+ * promise was created with whichever AbortSignal the first caller passed in,
+ * which caused a bug that is worth recording:
+ *
+ *   React StrictMode intentionally mounts, unmounts and remounts every effect in
+ *   development. On mount that looks like:
+ *
+ *     1. effect runs      -> request starts, bound to signal A
+ *     2. cleanup runs     -> signal A aborts, so the promise rejects
+ *     3. effect runs again -> cache hit, and the cached promise is the one that
+ *                             was just aborted. It can never resolve.
+ *
+ *   The result was a grid that stayed empty on first load and only populated
+ *   once the user changed a filter (because filter requests go to
+ *   /discover/movie, which is not cached). The genre list had the same defect,
+ *   which is why its dropdown listed nothing but "All genres".
+ *
+ * The fix is twofold, and both halves are required:
+ *
+ *   - Cache the resolved value, not the promise, so a later caller gets data
+ *     rather than another caller's cancellation.
+ *   - Never pass a caller's signal into a request that may be shared. A shared
+ *     request that any one participant can cancel is shared state with a race
+ *     condition built in.
+ *
+ * Callers keep their AbortController — it still governs whether *their* render
+ * consumes the result (see the `signal.aborted` guards in MovieContext and
+ * useGenres) — it just no longer cancels work that other callers are waiting on.
  */
-const cache = new Map();
+const responseCache = new Map();
+const inFlight = new Map();
 
-async function cachedRequest(key, request) {
-  if (cache.has(key)) return cache.get(key);
-  const promise = request();
-  cache.set(key, promise);
-  // Do not cache failures — a transient error should not poison the session.
-  promise.catch(() => cache.delete(key));
+function cachedRequest(key, makeRequest) {
+  if (responseCache.has(key)) return Promise.resolve(responseCache.get(key));
+  if (inFlight.has(key)) return inFlight.get(key);
+
+  const promise = makeRequest()
+    .then((data) => {
+      responseCache.set(key, data);
+      inFlight.delete(key);
+      return data;
+    })
+    .catch((error) => {
+      // Failures are never cached: a transient error must not poison the
+      // session, and the next caller should get a fresh attempt.
+      inFlight.delete(key);
+      throw error;
+    });
+
+  inFlight.set(key, promise);
   return promise;
 }
 
 /** Discard cached responses (used by the "Try again" action after an error). */
 export function clearResponseCache() {
-  cache.clear();
+  responseCache.clear();
+  inFlight.clear();
 }
 
-/** GET /trending/movie/week */
+/**
+ * GET /trending/movie/week
+ *
+ * Note: `signal` is accepted for API symmetry but deliberately not forwarded.
+ * See the cache notes above — this response is shared, so one caller's
+ * cancellation must not reject it for everyone. The caller decides whether to
+ * use the result.
+ */
 export function getTrendingMovies({ page = 1, window = 'week', signal } = {}) {
   if (USE_MOCK_DATA) return mockApi.getTrending({ page, signal });
 
   return cachedRequest(`trending:${window}:${page}`, () =>
-    axiosClient
-      .get(endpoints.trending(window), { params: { page }, signal })
-      .then((response) => response.data),
+    axiosClient.get(endpoints.trending(window), { params: { page } }).then((response) => response.data),
   );
 }
 
@@ -92,6 +149,10 @@ export function discoverMovies({
 } = {}) {
   if (USE_MOCK_DATA) return mockApi.discoverMovies({ page, genreId, year, minRating, sortBy, signal });
 
+  // Sorting by rating needs a minimum vote count or the results are dominated
+  // by titles with a single 10/10 vote. See utils/sorting.js.
+  const voteCountFloor = Math.max(minRating ? 100 : 0, voteFloorFor(sortBy));
+
   return axiosClient
     .get(endpoints.discoverMovies(), {
       params: {
@@ -100,7 +161,8 @@ export function discoverMovies({
         include_adult: false,
         ...(genreId ? { with_genres: genreId } : {}),
         ...(year ? { primary_release_year: year } : {}),
-        ...(minRating ? { 'vote_average.gte': minRating, 'vote_count.gte': 100 } : {}),
+        ...(minRating ? { 'vote_average.gte': minRating } : {}),
+        ...(voteCountFloor ? { 'vote_count.gte': voteCountFloor } : {}),
       },
       signal,
     })
@@ -125,16 +187,19 @@ export function getMovieDetails({ id, signal } = {}) {
     .then((response) => response.data);
 }
 
-/** GET /genre/movie/list — cached for the session, it rarely changes. */
+/**
+ * GET /genre/movie/list — cached for the session, it rarely changes.
+ *
+ * Returns a plain array. Both branches normalise to the same shape: the mock
+ * mirrors TMDb's raw `{ genres: [...] }` envelope, so the unwrapping happens
+ * here in the service layer rather than in every caller.
+ *
+ * `signal` is deliberately not forwarded — see the cache notes above.
+ */
 export function getGenres({ signal } = {}) {
-  // Both branches must return the same thing: an array of genre objects.
-  // The mock mirrors TMDb's raw envelope ({ genres: [...] }), so the unwrapping
-  // happens here, in the service layer, for live and sample data alike —
-  // otherwise the two branches return different shapes and every caller has to
-  // guess which source it is talking to.
   if (USE_MOCK_DATA) return mockApi.getGenres({ signal }).then((data) => data.genres);
 
   return cachedRequest('genres', () =>
-    axiosClient.get(endpoints.genres(), { params: { language: 'en-US' }, signal }).then((response) => response.data.genres),
+    axiosClient.get(endpoints.genres(), { params: { language: 'en-US' } }).then((response) => response.data.genres),
   );
 }

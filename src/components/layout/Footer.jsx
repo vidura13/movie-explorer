@@ -42,12 +42,20 @@ export default function Footer() {
             </Link>
           </Stack>
 
+          {/* Attribution. TMDb's terms also ask for the "not endorsed or
+              certified" disclaimer; that wording is kept in README.md rather
+              than the interface, so the footer stays uncluttered. */}
           <Typography variant="caption" color="text.secondary" sx={{ maxWidth: 520 }}>
-            This product uses the TMDB API but is not endorsed or certified by TMDB.
-          </Typography>
-
-          <Typography variant="caption" color="text.secondary">
-            Built with React, Material UI and axios · Portfolio project
+            This product was created using the TMDB API ·{' '}
+            <Link
+              href="https://www.themoviedb.org/"
+              target="_blank"
+              rel="noopener noreferrer"
+              underline="hover"
+              color="inherit"
+            >
+              themoviedb.org
+            </Link>
           </Typography>
         </Stack>
       </Container>

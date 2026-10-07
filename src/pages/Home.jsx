@@ -23,7 +23,7 @@ export default function Home() {
     status,
     error,
     retry,
-    query,
+    settledQuery,
     source,
     hasMore,
     page,
@@ -32,6 +32,7 @@ export default function Home() {
     isAppending,
     isSearching,
     isClientFiltered,
+    isClientSorted,
     hasActiveFilters,
     clearFilters,
     loadMore,
@@ -40,15 +41,35 @@ export default function Home() {
 
   const isTrendingView = source === 'trending';
 
-  const heading = isSearching ? `Results for “${query.trim()}”` : 'Trending this week';
+  /**
+   * The heading has to follow the data source, not the presence of a search box.
+   * Choosing a sort order switches the app off the trending feed and onto the
+   * sortable catalogue, so calling that "Trending this week" would be wrong.
+   *
+   * It follows `settledQuery` rather than the raw query so the heading always
+   * describes the movies actually on screen: for the 400ms the debounce is
+   * running, the grid still holds the previous results.
+   */
+  const heading = isSearching
+    ? `Results for “${settledQuery}”`
+    : isTrendingView
+      ? 'Trending this week'
+      : 'Browse movies';
 
   const subtitle = (() => {
     if (status === 'loading') return 'Loading…';
     if (status === 'error') return null;
     if (!visibleItems.length) return null;
+
     if (isClientFiltered) {
       // Be explicit that the count reflects loaded items, not the full match set.
       return `${pluralise(visibleItems.length, 'movie')} after filtering the ${pluralise(totalResults, 'loaded result')}`;
+    }
+    if (isClientSorted) {
+      return `${pluralise(visibleItems.length, 'movie')}, sorted locally`;
+    }
+    if (!isTrendingView) {
+      return `${pluralise(totalResults, 'movie')}`;
     }
     return pluralise(totalResults, 'movie');
   })();
@@ -78,7 +99,14 @@ export default function Home() {
         title={heading}
         subtitle={subtitle}
         liveMessage={
-          status === 'success' ? `${pluralise(visibleItems.length, 'movie')} shown for ${heading}` : ''
+          // Announced to screen readers when a search settles. Only mentions the
+          // heading when there is a query, otherwise the announcement reads
+          // awkwardly ("20 movies shown for Browse movies").
+          status === 'success'
+            ? isSearching
+              ? `${pluralise(visibleItems.length, 'movie')} shown for “${settledQuery}”`
+              : `${pluralise(visibleItems.length, 'movie')} shown`
+            : ''
         }
         action={
           isTrendingView && !hasActiveFilters && !isSearching ? (
@@ -94,7 +122,7 @@ export default function Home() {
         status={status}
         error={error}
         onRetry={retry}
-        emptyTitle={isSearching ? `No results for “${query.trim()}”` : 'No movies match those filters'}
+        emptyTitle={isSearching ? `No results for “${settledQuery}”` : 'No movies match those filters'}
         emptyDescription={
           isSearching
             ? 'Check the spelling, or try a shorter version of the title.'

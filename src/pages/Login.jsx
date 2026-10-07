@@ -204,7 +204,7 @@ export default function Login() {
             </Alert>
           )}
           <Typography variant="caption" color="text.secondary" textAlign="center">
-            This product uses the TMDB API but is not endorsed or certified by TMDB. ·{' '}
+            This product was created using the TMDB API ·{' '}
             <Link href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer" underline="hover">
               themoviedb.org
             </Link>

@@ -54,6 +54,16 @@ export default defineConfig({
     include: ['src/**/*.{test,spec}.{js,jsx}'],
 
     /**
+     * The end-to-end tests walk through several sequential steps — sign in, wait
+     * for trending, open a dropdown, wait for a filtered request — and the
+     * sample-data service deliberately simulates ~320ms of network latency per
+     * request so that loading states are real. The 5s default is too tight for
+     * a multi-step journey and produced timeouts that looked like product
+     * failures. Unit tests still finish in milliseconds.
+     */
+    testTimeout: 15_000,
+
+    /**
      * Force sample data for the whole test run.
      *
      * Without this, a developer who has a .env with a real token gets an

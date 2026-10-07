@@ -1,6 +1,7 @@
 import { ApiError } from '../api/axiosClient';
 import { GENRES, MOCK_MOVIES, genreName } from './mockData';
 import { MAX_TMDB_PAGE } from '../utils/constants';
+import { applySort, voteFloorFor } from '../utils/sorting';
 
 /**
  * An in-memory stand-in for the TMDb API.
@@ -92,21 +93,16 @@ function paginate(items, page) {
   };
 }
 
-/** Apply a sort_by value from the filter panel. */
+/**
+ * Apply a sort_by value.
+ *
+ * Delegates to the shared comparator in utils/sorting.js so the sample data
+ * orders results exactly the way the live client and the client-side search
+ * sorting do — three implementations of the same rule is three chances for them
+ * to diverge.
+ */
 function sortMovies(movies, sortBy = 'popularity.desc') {
-  const sorted = [...movies];
-
-  switch (sortBy) {
-    case 'vote_average.desc':
-      return sorted.sort((a, b) => b.vote_average - a.vote_average);
-    case 'primary_release_date.desc':
-      return sorted.sort((a, b) => b.release_date.localeCompare(a.release_date));
-    case 'primary_release_date.asc':
-      return sorted.sort((a, b) => a.release_date.localeCompare(b.release_date));
-    case 'popularity.desc':
-    default:
-      return sorted.sort((a, b) => b.popularity - a.popularity);
-  }
+  return applySort(movies, sortBy);
 }
 
 /** GET /trending/movie/{window} */
@@ -144,10 +140,15 @@ export async function discoverMovies({
 } = {}) {
   await delay(signal);
 
+  // Mirrors the vote-count floor the live client applies when sorting by
+  // rating, so sample data and live data behave the same way.
+  const voteFloor = Math.max(minRating ? 100 : 0, voteFloorFor(sortBy));
+
   const filtered = MOCK_MOVIES.filter((movie) => {
     if (genreId && !movie.genre_ids.includes(Number(genreId))) return false;
     if (year && !movie.release_date.startsWith(String(year))) return false;
     if (minRating && movie.vote_average < Number(minRating)) return false;
+    if (voteFloor && movie.vote_count < voteFloor) return false;
     return true;
   });
 

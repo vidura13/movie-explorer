@@ -1,7 +1,7 @@
 import { Chip, Stack, Typography } from '@mui/material';
 import { useMovies } from '../context/MovieContext';
 import { useGenres } from '../hooks/useGenres';
-import { INITIAL_FILTERS, RATING_OPTIONS } from '../utils/constants';
+import { INITIAL_FILTERS, RATING_OPTIONS, SORT_OPTIONS } from '../utils/constants';
 
 /**
  * Compact summary of the filters currently applied, each removable in one click.
@@ -23,7 +23,10 @@ export default function ActiveFilterChips() {
     ratingLabel && { key: 'rating', label: ratingLabel, clear: () => setFilters({ minRating: null }) },
     filters.sortBy !== INITIAL_FILTERS.sortBy && {
       key: 'sort',
-      label: 'Custom sort',
+      // Show which sort is active rather than a generic "Custom sort" — the
+      // whole point of this row is explaining why the results look the way
+      // they do.
+      label: `Sorted: ${SORT_OPTIONS.find((option) => option.value === filters.sortBy)?.label ?? 'Custom'}`,
       clear: () => setFilters({ sortBy: INITIAL_FILTERS.sortBy }),
     },
   ].filter(Boolean);
